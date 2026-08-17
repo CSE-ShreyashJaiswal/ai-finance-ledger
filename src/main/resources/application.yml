@@ -1,0 +1,36 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: ai-finance-ledger
+
+  # ── DataSource (local Docker Postgres) ──
+  datasource:
+    url: jdbc:postgresql://localhost:5432/finance_ledger
+    username: ledger_user
+    password: ledger_pass
+    driver-class-name: org.postgresql.Driver
+
+  # ── JPA / Hibernate ──
+  jpa:
+    hibernate:
+      ddl-auto: validate          # Flyway owns the schema — Hibernate only validates
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+    open-in-view: false           # Disable OSIV — force explicit fetch strategies
+
+  # ── Flyway ──
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+
+# ── Logging ──
+logging:
+  level:
+    root: INFO
+    com.financeledger: DEBUG
+    org.springframework.security: DEBUG

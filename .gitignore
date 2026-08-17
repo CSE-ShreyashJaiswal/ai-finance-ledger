@@ -1,0 +1,33 @@
+# === Build output ===
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# === IDE files ===
+# Eclipse
+.classpath
+.project
+.settings/
+bin/
+
+# IntelliJ
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# VS Code
+.vscode/
+
+# === OS files ===
+.DS_Store
+Thumbs.db
+
+# === Environment / secrets ===
+.env
+*.env.local
+
+# === Logs ===
+*.log
+logs/
