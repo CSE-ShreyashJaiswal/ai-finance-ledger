@@ -15,12 +15,12 @@ spring:
   # ── JPA / Hibernate ──
   jpa:
     hibernate:
-      ddl-auto: validate          # Flyway owns the schema — Hibernate only validates
+      ddl-auto: validate
     show-sql: false
     properties:
       hibernate:
         format_sql: true
-    open-in-view: false           # Disable OSIV — force explicit fetch strategies
+    open-in-view: false
 
   # ── Flyway ──
   flyway:
@@ -28,9 +28,13 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: false
 
+# ── JWT ──
+jwt:
+  secret: ai-finance-ledger-secret-key-that-is-at-least-256-bits-long-for-hs256
+  expiration: 86400000   # 24 hours in milliseconds
+
 # ── Logging ──
 logging:
   level:
     root: INFO
     com.financeledger: DEBUG
-    org.springframework.security: DEBUG

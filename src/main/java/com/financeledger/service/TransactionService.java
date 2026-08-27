@@ -27,10 +27,9 @@ import java.util.List;
  * <p>Key design decisions:
  * <ul>
  *   <li>Every transaction creates exactly two balanced ledger entries (DEBIT + CREDIT).</li>
- *   <li>Uses {@code REPEATABLE_READ} isolation with pessimistic locking ({@code SELECT FOR UPDATE})
- *       on the affected accounts to prevent lost updates under concurrent requests.</li>
- *   <li>Pessimistic locking chosen over {@code SERIALIZABLE} to avoid serialization-failure
- *       retry complexity ({@code 40001} errors in Postgres SSI).</li>
+ *   <li>Uses {@code REPEATABLE_READ} isolation with pessimistic locking on accounts.</li>
+ *   <li>Accounts are locked in ID order to prevent deadlocks.</li>
+ *   <li>Idempotency is handled at the controller level via {@link IdempotencyService}.</li>
  * </ul>
  */
 @Service
@@ -53,29 +52,17 @@ public class TransactionService {
     /**
      * Create a transaction with balanced double-entry ledger entries.
      *
-     * <p>This method:
-     * <ol>
-     *   <li>Acquires pessimistic write locks on both accounts (prevents concurrent modification)</li>
-     *   <li>Validates ownership and distinct accounts</li>
-     *   <li>Creates a {@link Transaction} with two {@link LedgerEntry} records</li>
-     *   <li>The entries balance to zero: one DEBIT, one CREDIT, same amount</li>
-     * </ol>
-     *
-     * <p>The {@code REPEATABLE_READ} isolation + {@code PESSIMISTIC_WRITE} lock ensures
-     * correctness under concurrent requests without the retry complexity of {@code SERIALIZABLE}.
-     *
-     * @param request the transaction details (accounts, amount, description)
-     * @return the created transaction with its ledger entries
+     * @param request the transaction details
+     * @param userId  the authenticated user's ID (from JWT)
+     * @return the created transaction
      */
     @Transactional(isolation = Isolation.REPEATABLE_READ)
-    public Transaction createTransaction(CreateTransactionRequest request) {
+    public Transaction createTransaction(CreateTransactionRequest request, Long userId) {
 
-        // 1. Resolve the user
-        User user = userRepository.findById(request.userId())
-                .orElseThrow(() -> new ResourceNotFoundException("User", request.userId()));
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", userId));
 
-        // 2. Lock both accounts with SELECT FOR UPDATE (pessimistic write lock)
-        //    Order by ID to prevent deadlocks when two transactions lock the same accounts in reverse order.
+        // Lock accounts in ID order to prevent deadlocks
         Long firstId = Math.min(request.debitAccountId(), request.creditAccountId());
         Long secondId = Math.max(request.debitAccountId(), request.creditAccountId());
 
@@ -84,27 +71,25 @@ public class TransactionService {
         Account secondAccount = accountRepository.findByIdForUpdate(secondId)
                 .orElseThrow(() -> new ResourceNotFoundException("Account", secondId));
 
-        // Map back to debit/credit after ordered locking
         Account debitAccount = request.debitAccountId().equals(firstId) ? firstAccount : secondAccount;
         Account creditAccount = request.creditAccountId().equals(firstId) ? firstAccount : secondAccount;
 
-        // 3. Validate: both accounts must belong to the same user
-        if (!debitAccount.getUser().getId().equals(user.getId())) {
+        // Validate ownership
+        if (!debitAccount.getUser().getId().equals(userId)) {
             throw new IllegalArgumentException("Debit account does not belong to user");
         }
-        if (!creditAccount.getUser().getId().equals(user.getId())) {
+        if (!creditAccount.getUser().getId().equals(userId)) {
             throw new IllegalArgumentException("Credit account does not belong to user");
         }
 
-        // 4. Validate: debit and credit accounts must be different
+        // Validate distinct accounts
         if (debitAccount.getId().equals(creditAccount.getId())) {
             throw new IllegalArgumentException("Debit and credit accounts must be different");
         }
 
-        // 5. Create the transaction
+        // Create transaction + balanced ledger entries
         Transaction transaction = new Transaction(user, request.description(), request.amount(), request.category());
 
-        // 6. Create balanced ledger entries (DEBIT + CREDIT, same amount)
         LedgerEntry debitEntry = new LedgerEntry(transaction, debitAccount, EntryType.DEBIT, request.amount());
         LedgerEntry creditEntry = new LedgerEntry(transaction, creditAccount, EntryType.CREDIT, request.amount());
 
@@ -119,7 +104,7 @@ public class TransactionService {
     }
 
     /**
-     * List all transactions for a user, most recent first.
+     * List all transactions for the authenticated user, most recent first.
      */
     @Transactional(readOnly = true)
     public List<Transaction> getTransactionsByUser(Long userId) {

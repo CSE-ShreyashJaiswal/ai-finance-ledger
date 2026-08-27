@@ -20,9 +20,7 @@ import java.util.List;
  * Service for account operations including balance computation.
  *
  * <p><b>Key design principle:</b> Account balance is <em>never</em> stored as a column.
- * It is always computed from the sum of ledger entries. This eliminates drift
- * between a cached balance and the source of truth — exactly what a real
- * financial system does.
+ * It is always computed from the sum of ledger entries.
  */
 @Service
 public class AccountService {
@@ -40,12 +38,12 @@ public class AccountService {
     }
 
     /**
-     * Create a new account for a user.
+     * Create a new account for the authenticated user.
      */
     @Transactional
-    public Account createAccount(CreateAccountRequest request) {
-        User user = userRepository.findById(request.userId())
-                .orElseThrow(() -> new ResourceNotFoundException("User", request.userId()));
+    public Account createAccount(CreateAccountRequest request, Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", userId));
 
         AccountType type;
         try {
@@ -60,7 +58,7 @@ public class AccountService {
     }
 
     /**
-     * List all accounts for a given user.
+     * List all accounts for the authenticated user.
      */
     @Transactional(readOnly = true)
     public List<Account> getAccountsByUser(Long userId) {
@@ -78,9 +76,6 @@ public class AccountService {
      *   <li><b>ASSET</b> accounts: balance = Σ(DEBIT) − Σ(CREDIT)</li>
      *   <li><b>LIABILITY</b> accounts: balance = Σ(CREDIT) − Σ(DEBIT)</li>
      * </ul>
-     *
-     * <p>This is the heart of the double-entry ledger. No balance column exists;
-     * the balance is always derived from the ledger entries.
      */
     @Transactional(readOnly = true)
     public BalanceResponse computeBalance(Long accountId) {
@@ -94,10 +89,8 @@ public class AccountService {
 
         BigDecimal balance;
         if (account.getType() == AccountType.ASSET) {
-            // ASSET: debits increase, credits decrease
             balance = totalDebits.subtract(totalCredits);
         } else {
-            // LIABILITY: credits increase, debits decrease
             balance = totalCredits.subtract(totalDebits);
         }
 
